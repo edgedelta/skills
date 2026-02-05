@@ -1,0 +1,11 @@
+# EdgeDelta Skills Repository Code Owners
+# These owners will be requested for review when someone opens a pull request.
+
+# Default owners for everything in the repo
+* @daniel-edgedelta
+
+# Skills require review
+/skills/ @daniel-edgedelta
+
+# Plugin configuration requires review
+/.claude-plugin/ @daniel-edgedelta
