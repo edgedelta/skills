@@ -1,0 +1,9 @@
+{
+  "name": "edgedelta-skills",
+  "displayName": "EdgeDelta Skills",
+  "description": "Official EdgeDelta skills for observability, pipelines, dashboards, and telemetry",
+  "version": "0.1.0",
+  "publisher": "edgedelta",
+  "repository": "https://github.com/edgedelta/skills",
+  "skills": []
+}

@@ -1,0 +1,24 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Node modules (if any tooling added later)
+node_modules/
+
+# Local development
+.local.md
+*.local
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+.tmp/
