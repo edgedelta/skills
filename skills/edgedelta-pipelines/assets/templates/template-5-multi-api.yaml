@@ -1,0 +1,118 @@
+version: v3
+
+settings:
+  tag: template5-multi-api-dynamic-headers
+  log:
+    level: info
+  archive_flush_interval: 1m0s
+  archive_max_byte_limit: 16MB
+  item_buffer_flush_interval: 1s
+  item_buffer_max_byte_limit: 100KB
+
+links:
+- from: api_users
+  to: users_processor
+- from: api_posts
+  to: posts_processor
+- from: api_comments
+  to: comments_processor
+- from: users_processor
+  to: aggregator
+- from: posts_processor
+  to: aggregator
+- from: comments_processor
+  to: aggregator
+- from: aggregator
+  to: edgedelta
+- from: ed_self_telemetry_input
+  to: edgedelta
+
+nodes:
+- name: edgedelta
+  type: ed_output
+- name: ed_self_telemetry_input
+  type: ed_self_telemetry_input
+  enable_health_metrics: true
+  enable_agent_stats_metrics: true
+- name: api_users
+  type: http_pull_input
+  endpoint: https://jsonplaceholder.typicode.com/users
+  method: GET
+  pull_interval: 5m
+  header_expressions:
+    - header: Accept
+      value_expression: '"application/json"'
+    - header: X-Request-Time
+      value_expression: 'FormatTime(Now(), "2006-01-02T15:04:05Z07:00")'
+    - header: X-Source
+      value_expression: '"edgedelta-pipeline"'
+- name: api_posts
+  type: http_pull_input
+  endpoint: https://jsonplaceholder.typicode.com/posts
+  method: GET
+  pull_interval: 5m
+  parameter_expressions:
+    - name: _limit
+      value_expression: '"10"'
+  header_expressions:
+    - header: Accept
+      value_expression: '"application/json"'
+    - header: X-Request-Time
+      value_expression: 'FormatTime(Now(), "2006-01-02T15:04:05Z07:00")'
+- name: api_comments
+  type: http_pull_input
+  endpoint: https://jsonplaceholder.typicode.com/comments
+  method: GET
+  pull_interval: 5m
+  parameter_expressions:
+    - name: _limit
+      value_expression: '"10"'
+  header_expressions:
+    - header: Accept
+      value_expression: '"application/json"'
+    - header: X-Request-Time
+      value_expression: 'FormatTime(Now(), "2006-01-02T15:04:05Z07:00")'
+- name: users_processor
+  type: sequence
+  user_description: Users API Processing
+  processors:
+    - type: ottl_transform
+      statements: |
+        set(attributes["api_type"], "users")
+        set(attributes["processed_at"], Now())
+      final: true
+- name: posts_processor
+  type: sequence
+  user_description: Posts API Processing
+  processors:
+    - type: ottl_transform
+      statements: |
+        set(attributes["api_type"], "posts")
+        set(attributes["processed_at"], Now())
+      final: true
+- name: comments_processor
+  type: sequence
+  user_description: Comments API Processing
+  processors:
+    - type: ottl_transform
+      statements: |
+        set(attributes["api_type"], "comments")
+        set(attributes["processed_at"], Now())
+      final: true
+- name: aggregator
+  type: sequence
+  user_description: Aggregate All APIs
+  processors:
+    - type: extract_metric
+      extract_metric_rules:
+        - name: "api_pulls_total"
+          description: "Total API pulls by type"
+          unit: "1"
+          conditions:
+            - 'attributes["api_type"] != nil'
+          sum:
+            aggregation_temporality: delta
+            is_monotonic: true
+            value: 1
+      interval: 1m
+      final: true

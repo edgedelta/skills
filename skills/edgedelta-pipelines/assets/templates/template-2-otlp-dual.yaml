@@ -1,0 +1,59 @@
+version: v3
+
+settings:
+  tag: template2-otlp-dual-receiver
+  log:
+    level: info
+  archive_flush_interval: 1m0s
+  archive_max_byte_limit: 16MB
+
+links:
+- from: otlp_grpc
+  to: otlp_processing
+- from: otlp_http
+  to: otlp_processing
+- from: otlp_processing
+  to: edgedelta
+- from: ed_self_telemetry_input
+  to: edgedelta
+
+nodes:
+- name: edgedelta
+  type: ed_output
+- name: ed_self_telemetry_input
+  type: ed_self_telemetry_input
+  enable_health_metrics: true
+  enable_agent_stats_metrics: true
+- name: otlp_grpc
+  type: otlp_input
+  user_description: OTLP gRPC Receiver
+  port: 4317
+  protocol: grpc
+  read_timeout: 1m0s
+- name: otlp_http
+  type: otlp_input
+  user_description: OTLP HTTP Receiver
+  port: 4318
+  protocol: http
+  read_timeout: 1m0s
+- name: otlp_processing
+  type: sequence
+  user_description: OTLP Data Processing
+  processors:
+    - type: ottl_transform
+      statements: |-
+        set(attributes["processed"], "true")
+        set(attributes["pipeline"], "template2-otlp")
+    - type: extract_metric
+      extract_metric_rules:
+        - name: "otlp_requests_total"
+          description: "Count of OTLP requests"
+          unit: "1"
+          conditions:
+            - 'IsMatch(body, ".*")'
+          sum:
+            aggregation_temporality: delta
+            is_monotonic: true
+            value: 1
+      interval: 1m
+      final: true

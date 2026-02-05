@@ -5,5 +5,7 @@
   "version": "0.1.0",
   "publisher": "edgedelta",
   "repository": "https://github.com/edgedelta/skills",
-  "skills": []
+  "skills": [
+    "edgedelta-pipelines"
+  ]
 }

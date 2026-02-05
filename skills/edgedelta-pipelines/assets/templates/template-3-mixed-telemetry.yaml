@@ -1,0 +1,70 @@
+version: v3
+
+settings:
+  tag: template3-mixed-telemetry
+  log:
+    level: info
+  archive_flush_interval: 1m0s
+  archive_max_byte_limit: 16MB
+
+links:
+- from: app_logs
+  to: log_processing
+- from: log_processing
+  to: edgedelta
+- from: metrics_input
+  to: metric_processing
+- from: metric_processing
+  to: edgedelta
+- from: ed_self_telemetry_input
+  to: edgedelta
+
+nodes:
+- name: edgedelta
+  type: ed_output
+- name: ed_self_telemetry_input
+  type: ed_self_telemetry_input
+  enable_health_metrics: true
+  enable_agent_stats_metrics: true
+- name: app_logs
+  type: file_input
+  user_description: Application Logs
+  path: /var/log/app/*.log
+- name: metrics_input
+  type: otlp_input
+  user_description: Prometheus Metrics
+  port: 9090
+  protocol: http
+  read_timeout: 1m0s
+- name: log_processing
+  type: sequence
+  user_description: Log Processing Pipeline
+  processors:
+    - type: generic_mask
+      capture_group_masks:
+        - capture_group: "(?i)token[:=]\\S+"
+          enabled: true
+          mask: "***TOKEN***"
+          name: "api_token"
+    - type: extract_metric
+      extract_metric_rules:
+        - name: "log_errors_total"
+          description: "Total log errors"
+          unit: "1"
+          conditions:
+            - 'IsMatch(body, "(?i)ERROR")'
+          sum:
+            aggregation_temporality: delta
+            is_monotonic: true
+            value: 1
+      interval: 1m
+      final: true
+- name: metric_processing
+  type: sequence
+  user_description: Metric Processing Pipeline
+  processors:
+    - type: ottl_transform
+      statements: |-
+        set(attributes["source"], "prometheus")
+        set(attributes["environment"], "production")
+      final: true
