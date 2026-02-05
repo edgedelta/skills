@@ -1,6 +1,7 @@
 # OS files
 .DS_Store
 Thumbs.db
+._*
 
 # IDE/Editor
 .idea/
@@ -8,13 +9,17 @@ Thumbs.db
 *.swp
 *.swo
 *~
+.project
+.settings/
 
 # Node modules (if any tooling added later)
 node_modules/
+package-lock.json
 
 # Local development
 .local.md
 *.local
+.claude/
 
 # Logs
 *.log
@@ -22,3 +27,21 @@ node_modules/
 # Temporary files
 tmp/
 .tmp/
+
+# Secrets - NEVER commit these
+.env
+.env.*
+*.pem
+*.key
+*.crt
+**/credentials*
+**/secrets*
+**/*secret*
+**/*token*
+!skills/TEMPLATE/  # Allow template directory
+
+# Build artifacts
+dist/
+build/
+*.zip
+*.tar.gz
