@@ -1,0 +1,63 @@
+version: v3
+
+settings:
+  tag: template1-no-persist
+  log:
+    level: info
+  archive_flush_interval: 1m0s
+  archive_max_byte_limit: 16MB
+
+links:
+- from: app_logs
+  to: pii_masking_and_metrics
+- from: pii_masking_and_metrics
+  to: edgedelta
+- from: ed_self_telemetry_input
+  to: edgedelta
+
+nodes:
+- name: edgedelta
+  type: ed_output
+- name: ed_self_telemetry_input
+  type: ed_self_telemetry_input
+  enable_health_metrics: true
+  enable_agent_stats_metrics: true
+- name: app_logs
+  type: file_input
+  user_description: Application Logs
+  path: /var/log/app/*.log
+- name: pii_masking_and_metrics
+  type: sequence
+  user_description: PII Masking and Metrics Extraction
+  processors:
+    - type: generic_mask
+      capture_group_masks:
+        - capture_group: "(?i)(password|passwd|pwd)[:=]\\S+"
+          enabled: true
+          mask: "***PASSWORD_REDACTED***"
+          name: "password"
+    - type: generic_mask
+      capture_group_masks:
+        - capture_group: "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"
+          enabled: true
+          mask: "***EMAIL***"
+          name: "email"
+    - type: generic_mask
+      capture_group_masks:
+        - capture_group: "\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b"
+          enabled: true
+          mask: "***CC***"
+          name: "credit_card"
+    - type: extract_metric
+      extract_metric_rules:
+        - name: "app_errors_total"
+          description: "Count of application errors"
+          unit: "1"
+          conditions:
+            - 'IsMatch(body, "(?i)(ERROR|EXCEPTION|FATAL|CRITICAL)")'
+          sum:
+            aggregation_temporality: delta
+            is_monotonic: true
+            value: 1
+      interval: 1m
+      final: true

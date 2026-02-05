@@ -1,0 +1,91 @@
+version: v3
+
+settings:
+  tag: template6-prometheus-scraper
+  log:
+    level: info
+  archive_flush_interval: 1m0s
+  archive_max_byte_limit: 16MB
+
+links:
+- from: ed_self_telemetry_input
+  to: edgedelta
+- from: ed_system_stats
+  to: edgedelta
+- from: ed_source_detection
+  to: edgedelta
+- from: prometheus_scraper
+  to: prometheus_processor
+- from: prometheus_processor
+  to: edgedelta_aggregator
+- from: edgedelta_aggregator
+  to: edgedelta
+
+nodes:
+- name: ed_self_telemetry_input
+  type: ed_self_telemetry_input
+  enable_health_metrics: true
+  enable_agent_stats_metrics: true
+
+- name: ed_system_stats
+  type: ed_system_stats_input
+  enable_granular_metrics: true
+  disable_classic_metrics: true
+
+- name: ed_source_detection
+  type: ed_source_detection_input
+
+- name: prometheus_scraper
+  type: prometheus_input
+  user_description: Prometheus Metrics Scraper
+  should_only_leader_ingest: true
+  config: |-
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+    # Scrape Prometheus itself
+    - job_name: "prometheus_server"
+      scrape_interval: 15s
+      static_configs:
+        - targets: ["localhost:9090"]
+      metrics_path: "/metrics"
+      scheme: "http"
+
+    # Scrape Node Exporters
+    - job_name: "node_exporters"
+      scrape_interval: 30s
+      static_configs:
+        - targets:
+            - "node1.example.com:9100"
+            - "node2.example.com:9100"
+            - "node3.example.com:9100"
+          labels:
+            environment: "production"
+            cluster: "us-east-1"
+      metrics_path: "/metrics"
+      scheme: "http"
+      relabel_configs:
+        # Use custom label as instance name
+        - source_labels: [__address__]
+          target_label: instance
+          action: replace
+
+- name: prometheus_processor
+  type: sequence
+  user_description: Prometheus Metrics Processing
+  processors:
+    - type: ottl_transform
+      statements: |
+        set(attributes["data_source"], "prometheus")
+        set(attributes["collected_at"], Now())
+      final: true
+
+- name: edgedelta_aggregator
+  type: sequence
+  user_description: Aggregation Layer
+
+- name: edgedelta
+  type: ed_output
+  user_description: EdgeDelta Output

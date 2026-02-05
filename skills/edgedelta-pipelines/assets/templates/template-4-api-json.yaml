@@ -1,0 +1,53 @@
+version: v3
+
+settings:
+  tag: template4-api-json-processing
+  log:
+    level: info
+  archive_flush_interval: 1m0s
+  archive_max_byte_limit: 16MB
+  item_buffer_flush_interval: 1s
+  item_buffer_max_byte_limit: 100KB
+
+links:
+- from: api_pull
+  to: json_processor
+- from: json_processor
+  to: edgedelta
+- from: ed_self_telemetry_input
+  to: edgedelta
+
+nodes:
+- name: edgedelta
+  type: ed_output
+- name: ed_self_telemetry_input
+  type: ed_self_telemetry_input
+  enable_health_metrics: true
+  enable_agent_stats_metrics: true
+- name: api_pull
+  type: http_pull_input
+  endpoint: "https://jsonplaceholder.typicode.com/users"
+  method: GET
+  pull_interval: 5m
+  headers:
+    - header: Accept
+      value: application/json
+- name: json_processor
+  type: sequence
+  user_description: API Response Processing
+  processors:
+    - type: ottl_transform
+      statements: |
+        set(attributes["api_source"], "jsonplaceholder")
+        set(attributes["pulled_at"], Now())
+    - type: json_unroll
+      json_field_path: "$"
+      new_field_name: "user_item"
+    - type: ottl_transform
+      statements: |
+        set(cache["user_data"], ParseJSON(body)["user_item"])
+        set(attributes["user_id"], cache["user_data"]["id"]) where cache["user_data"] != nil
+        set(attributes["user_name"], cache["user_data"]["name"]) where cache["user_data"] != nil
+        set(attributes["user_email"], cache["user_data"]["email"]) where cache["user_data"] != nil
+        set(attributes["processed"], "true")
+      final: true

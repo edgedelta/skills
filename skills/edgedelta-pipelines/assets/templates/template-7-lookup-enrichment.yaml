@@ -1,0 +1,138 @@
+version: v3
+
+settings:
+  tag: template7-lookup-enrichment
+  log:
+    level: info
+  archive_flush_interval: 1m0s
+  archive_max_byte_limit: 16MB
+
+nodes:
+- name: ed_self_telemetry_input
+  type: ed_self_telemetry_input
+  enable_health_metrics: true
+  enable_agent_stats_metrics: true
+
+- name: edgedelta
+  type: ed_output
+
+- name: log_input
+  type: file_input
+  path: /var/log/app/*.log
+
+- name: User Lookup Enrichment
+  type: compound
+  nodes:
+  - name: compound_input
+    type: compound_input
+    user_description: Input Source
+
+  - name: enriched_output
+    type: compound_output
+    user_description: Enriched Data Output
+
+  - name: unmatched_output
+    type: compound_output
+    user_description: Unmatched Data Output
+
+  - name: enrichment_sequence
+    type: sequence
+    user_description: Lookup Enrichment Processing
+    processors:
+    # Step 1: Parse JSON from body if needed
+    - type: ottl_transform
+      data_types:
+      - log
+      statements: |-
+        set(cache["parsed-json"], ParseJSON(body))
+        merge_maps(attributes, cache["parsed-json"], "upsert") where IsMap(attributes) and IsMap(cache["parsed-json"])
+        set(attributes, cache["parsed-json"]) where not (IsMap(attributes) and IsMap(cache["parsed-json"]))
+
+    # Step 2: Extract and validate lookup key
+    - type: ottl_transform
+      data_types:
+      - log
+      statements: |-
+        // Extract user ID for enrichment
+        set(attributes["lookup_key"], attributes["user_id"]) where attributes["user_id"] != nil
+
+        // Mark as valid if key exists
+        set(attributes["lookup_valid"], true) where attributes["lookup_key"] != nil
+        set(attributes["lookup_valid"], false) where attributes["lookup_key"] == nil
+
+    # Step 3: Perform lookup against CSV/database
+    - type: lookup
+      data_types:
+      - log
+      location_path: ed://users.csv
+      reload_period: 5m0s
+      match_mode: exact
+      key_fields:
+      - event_field: attributes["lookup_key"]
+        lookup_field: user_id
+      out_fields:
+      - event_field: attributes["user_name"]
+        lookup_field: name
+      - event_field: attributes["user_email"]
+        lookup_field: email
+      - event_field: attributes["user_department"]
+        lookup_field: department
+      - event_field: attributes["user_role"]
+        lookup_field: role
+
+    # Step 4: Format enriched data
+    - type: ottl_transform
+      data_types:
+      - log
+      statements: |-
+        // Construct enriched user data structure
+        set(attributes["enrichment.user_id"], attributes["lookup_key"])
+        set(attributes["enrichment.name"], attributes["user_name"]) where attributes["user_name"] != nil
+        set(attributes["enrichment.email"], attributes["user_email"]) where attributes["user_email"] != nil
+        set(attributes["enrichment.department"], attributes["user_department"]) where attributes["user_department"] != nil
+        set(attributes["enrichment.role"], attributes["user_role"]) where attributes["user_role"] != nil
+        set(attributes["enrichment.enriched"], true) where attributes["user_name"] != nil
+        set(attributes["enrichment.enriched"], false) where attributes["user_name"] == nil
+
+        // Add enrichment metadata
+        set(attributes["enrichment.timestamp"], Now())
+
+        // Remove temporary processing attributes
+        delete_key(attributes, "user_name")
+        delete_key(attributes, "user_email")
+        delete_key(attributes, "user_department")
+        delete_key(attributes, "user_role")
+        delete_key(attributes, "lookup_key")
+        delete_key(attributes, "lookup_valid")
+
+  - name: enrichment_router
+    type: route
+    user_description: Route based on enrichment status
+    paths:
+    - path: enriched
+      condition: item["attributes"]["enrichment.enriched"] == true
+      exit_if_matched: true
+
+  links:
+  - from: compound_input
+    to: enrichment_sequence
+  - from: enrichment_sequence
+    to: enrichment_router
+  - from: enrichment_router
+    path: enriched
+    to: enriched_output
+  - from: enrichment_router
+    path: unmatched
+    to: unmatched_output
+
+links:
+- from: ed_self_telemetry_input
+  to: edgedelta
+- from: log_input
+  to: User Lookup Enrichment
+- from: User Lookup Enrichment
+  path: enriched_output
+  to: edgedelta
+- from: User Lookup Enrichment
+  path: unmatched_output
+  to: edgedelta
